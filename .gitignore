@@ -59,3 +59,22 @@ build/
 tmp/
 temp/
 *.tmp
+
+# Terraform - Sensitive Files
+terraform.tfvars           # ← NEVER commit this
+*.tfvars                   # Exclude all .tfvars files
+*.auto.tfvars             # Auto-loaded variables
+
+# Terraform State (contains sensitive data)
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Terraform Plans
+*.tfplan
+
+# Override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
