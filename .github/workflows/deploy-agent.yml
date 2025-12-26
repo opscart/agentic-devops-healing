@@ -1,0 +1,15 @@
+# .github/workflows/deploy-agent.yml
+
+name: Deploy Agent (Disabled)
+
+# Disabled - using Azure DevOps Pipelines instead
+on:
+  workflow_dispatch:  # Only manual trigger, never automatic
+
+jobs:
+  placeholder:
+    runs-on: ubuntu-latest
+    if: false  # Never run
+    steps:
+      - name: Placeholder
+        run: echo "This workflow is disabled"

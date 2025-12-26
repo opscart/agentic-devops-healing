@@ -1,0 +1,14 @@
+# .github/workflows/test-scenarios.yml
+
+name: Test Scenarios (Disabled)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  placeholder:
+    runs-on: ubuntu-latest
+    if: false
+    steps:
+      - name: Placeholder
+        run: echo "This workflow is disabled"
