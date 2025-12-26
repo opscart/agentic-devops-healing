@@ -1,0 +1,19 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    
+    "OPENAI_ENDPOINT": "https://your-openai.openai.azure.com/",
+    "OPENAI_API_KEY": "your-openai-key",
+    "OPENAI_DEPLOYMENT_NAME": "gpt-4o-analyzer",
+    "OPENAI_API_VERSION": "2024-08-01-preview",
+    
+    "ADO_ORG_URL": "https://dev.azure.com/your-org",
+    "ADO_PROJECT_NAME": "your-project",
+    "ADO_PAT": "your-pat-token",
+    
+    "STORAGE_CONNECTION_STRING": "your-storage-connection-string",
+    "LOG_CONTAINER_NAME": "build-logs"
+  }
+}

@@ -1,0 +1,25 @@
+################################################################################
+# Example Terraform Variables
+# Copy this to terraform.tfvars and customize
+################################################################################
+
+resource_prefix = "agenticdevops"
+environment     = "dev"
+azure_region    = "eastus"
+openai_region   = "eastus"
+
+# Azure DevOps settings
+ado_org_url      = "https://dev.azure.com/your-org"
+ado_project_name = "your-project"
+
+# DON'T put PAT here - set it after deployment via Key Vault
+# ado_pat_token = ""
+
+common_tags = {
+  Project     = "Agentic DevOps Healing"
+  ManagedBy   = "Terraform"
+  Environment = "dev"
+  Owner       = "Shamsher Khan"
+  CostCenter  = "Research"
+  Purpose     = "AI Pipeline Remediation"
+}
