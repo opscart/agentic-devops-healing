@@ -10,7 +10,7 @@ stages:
     displayName: 'Deploy Infrastructure (Will Fail)'
     jobs:
       - job: TerraformDeploy
-        displayName: 'Terraform Apply'
+        displayName: 'Terraform Plan with Invalid Region'
         steps:
           # Install Terraform
           - bash: |
@@ -33,6 +33,10 @@ stages:
                     source  = "hashicorp/azurerm"
                     version = "~> 3.0"
                   }
+                  random = {
+                    source = "hashicorp/random"
+                    version = "~> 3.0"
+                  }
                 }
               }
               
@@ -41,10 +45,21 @@ stages:
                 skip_provider_registration = true
               }
               
+              # Use random string to avoid conflicts
+              resource "random_string" "suffix" {
+                length  = 8
+                special = false
+                upper   = false
+              }
+              
               # This will fail - invalid region format
               resource "azurerm_resource_group" "test" {
-                name     = "rg-test-region"
+                name     = "rg-test-region-${random_string.suffix.result}"
                 location = "east-us"  # ← ERROR: Should be "eastus"
+              }
+              
+              output "test" {
+                value = azurerm_resource_group.test.id
               }
               EOF
               
@@ -57,7 +72,11 @@ stages:
               terraform init
             displayName: 'Terraform Init'
           
+          # This step will catch the error
           - bash: |
               cd terraform-test
-              terraform validate
-            displayName: 'Terraform Validate (Expected to Fail)'
+              echo "Running terraform plan with invalid region..."
+              terraform plan -out=tfplan
+            displayName: 'Terraform Plan (Expected to Fail)'
+            env:
+              ARM_SKIP_PROVIDER_REGISTRATION: 'true'

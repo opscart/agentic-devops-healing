@@ -258,7 +258,7 @@ async def execute_remediation(rca_result: dict, failure_context: dict) -> dict:
         ado_client = AzureDevOpsClient()
         
         # HIGH confidence + can autofix = Create PR
-        if confidence >= 0.8 and can_autofix:
+        if confidence >= 0.7 and can_autofix:
             logging.info("✨ High confidence - attempting auto-fix")
             
             git_ops = GitOperations()

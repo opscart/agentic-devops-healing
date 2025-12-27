@@ -69,7 +69,7 @@ def analyze_missing_variable(error_message: str, context: Dict) -> Dict:
         
         return {
             "category": "TERRAFORM_MISSING_VARIABLE",
-            "confidence": 0.9,
+            "confidence": 0.95,
             "explanation": f"Terraform requires variable '{var_name}' which is not defined in the pipeline.",
             "can_autofix": True,
             "fix_code": generate_variable_fix(var_name),

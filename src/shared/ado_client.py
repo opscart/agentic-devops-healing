@@ -38,11 +38,27 @@ class AzureDevOpsClient:
                     log_content = self.build_client.get_build_log(
                         project, build_id, log.id
                     )
-                    full_log.append(log_content)
+                    
+                    # Handle different response types
+                    if hasattr(log_content, 'read'):
+                        # File-like object
+                        content = log_content.read()
+                        if isinstance(content, bytes):
+                            content = content.decode('utf-8')
+                        full_log.append(content)
+                    elif isinstance(log_content, str):
+                        # Already a string
+                        full_log.append(log_content)
+                    else:
+                        # Generator or iterable
+                        full_log.append(''.join(str(line) for line in log_content))
+                        
                 except Exception as e:
                     logging.warning(f"Could not fetch log {log.id}: {str(e)}")
             
-            return "\n".join(full_log)
+            result = "\n".join(full_log)
+            logging.info(f"Fetched {len(full_log)} log entries, total length: {len(result)}")
+            return result
             
         except Exception as e:
             logging.error(f"Error fetching build logs: {str(e)}")
