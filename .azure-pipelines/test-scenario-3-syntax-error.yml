@@ -1,0 +1,68 @@
+# Test Scenario 3: Terraform Syntax Error
+# This pipeline will fail because of HCL syntax error
+
+trigger: none
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+  - stage: Infrastructure
+    displayName: 'Parse Terraform (Will Fail)'
+    jobs:
+      - job: TerraformValidate
+        displayName: 'Terraform Validate'
+        steps:
+          - task: TerraformInstaller@0
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: 'latest'
+          
+          - bash: |
+              mkdir -p terraform-test
+              cd terraform-test
+              
+              # Create main.tf with SYNTAX ERROR
+              cat > main.tf << 'EOF'
+              terraform {
+                required_version = ">= 1.0"
+                required_providers {
+                  azurerm = {
+                    source  = "hashicorp/azurerm"
+                    version = "~> 3.0"
+                  }
+                }
+              }
+              
+              provider "azurerm" {
+                features {}
+              }
+              
+              resource "azurerm_resource_group" "test" {
+                # ← ERROR: Missing closing brace for string interpolation
+                name     = "rg-${var.prefix-${var.environment}"
+                location = "eastus"
+              }
+              
+              variable "prefix" {
+                default = "test"
+              }
+              
+              variable "environment" {
+                default = "dev"
+              }
+              EOF
+              
+              echo "Created Terraform with syntax error"
+              cat main.tf
+            displayName: 'Create Terraform with Syntax Error'
+          
+          - bash: |
+              cd terraform-test
+              terraform init
+            displayName: 'Terraform Init'
+          
+          - bash: |
+              cd terraform-test
+              terraform validate
+            displayName: 'Terraform Validate (Expected to Fail)'

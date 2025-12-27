@@ -186,11 +186,19 @@ class AzureDevOpsClient:
                 )
             ]
             
-            work_item = self.work_item_client.create_work_item(
-                document=document,
-                project=project,
-                type="Bug"
-            )
+            try:
+                work_item = self.work_item_client.create_work_item(
+                    document=document,
+                    project=project,
+                    type="Bug"
+                )
+            except Exception as e:
+                logging.warning(f"Could not create Bug, trying Task: {str(e)}")
+                work_item = self.work_item_client.create_work_item(
+                    document=document,
+                    project=project,
+                    type="Task"
+                )
             
             logging.info(f"Created work item: {work_item.id}")
             return work_item.id

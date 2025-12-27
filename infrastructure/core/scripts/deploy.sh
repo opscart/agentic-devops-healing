@@ -24,10 +24,10 @@ echo ""
 
 cd "$TF_DIR"
 
-# Check if terraform.tfvars exists
-if [ ! -f "terraform.tfvars" ]; then
-    echo "⚠️  terraform.tfvars not found"
-    echo "Creating from example..."
+# Check if terraform.tfvars exists OR environment variables are set
+if [ ! -f "terraform.tfvars" ] && [ -z "$TF_VAR_ado_org_url" ]; then
+    echo "⚠️  terraform.tfvars not found and no environment variables set"
+    echo "📝 Creating from example..."
     cp terraform.tfvars.example terraform.tfvars
     echo ""
     echo "❗ Please edit terraform.tfvars with your values:"
@@ -35,6 +35,9 @@ if [ ! -f "terraform.tfvars" ]; then
     echo "   - ado_project_name"
     echo ""
     read -p "Press Enter after updating terraform.tfvars..."
+elif [ ! -f "terraform.tfvars" ] && [ -n "$TF_VAR_ado_org_url" ]; then
+    echo "✅ Using environment variables for configuration"
+    echo ""
 fi
 
 # Initialize Terraform

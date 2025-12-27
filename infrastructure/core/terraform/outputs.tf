@@ -56,7 +56,7 @@ output "next_steps" {
   description = "What to do after deployment"
   value = <<-EOT
   
-  Deployment Complete!
+  ✅ Deployment Complete!
   
   📋 Next Steps:
   
@@ -72,7 +72,7 @@ output "next_steps" {
      func azure functionapp list-functions ${azurerm_linux_function_app.main.name} --show-keys
   
   4. Update Azure DevOps pipeline with webhook:
-     ${self.value["webhook_url"]}?code=YOUR_FUNCTION_KEY
+     https://${azurerm_linux_function_app.main.default_hostname}/api/HandleFailure?code=YOUR_FUNCTION_KEY
   
   5. View logs:
      func azure functionapp logstream ${azurerm_linux_function_app.main.name}

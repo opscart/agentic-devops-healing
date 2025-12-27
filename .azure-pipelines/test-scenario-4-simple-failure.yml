@@ -1,0 +1,20 @@
+# Test Scenario 4: Simple Failure
+# Quick test to verify webhook integration
+
+trigger: none
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+  - stage: Test
+    displayName: 'Test Stage (Will Fail)'
+    jobs:
+      - job: FailJob
+        displayName: 'Deliberate Failure'
+        steps:
+          - bash: |
+              echo "Simulating a pipeline failure..."
+              echo "Error: This is a test failure"
+              exit 1
+            displayName: 'Fail Deliberately'

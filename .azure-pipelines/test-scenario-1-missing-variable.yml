@@ -1,0 +1,83 @@
+# Test Scenario 1: Missing Terraform Variable
+# This pipeline will fail because a required variable is not defined
+
+trigger: none  # Manual trigger only
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - name: SCENARIO
+    value: 'missing-variable'
+
+stages:
+  - stage: Infrastructure
+    displayName: 'Deploy Infrastructure (Will Fail)'
+    jobs:
+      - job: TerraformDeploy
+        displayName: 'Terraform Apply'
+        steps:
+          # Install Terraform
+          - task: TerraformInstaller@0
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: 'latest'
+          
+          # Create broken Terraform code
+          - bash: |
+              mkdir -p terraform-test
+              cd terraform-test
+              
+              # Create main.tf with missing variable reference
+              cat > main.tf << 'EOF'
+              terraform {
+                required_version = ">= 1.0"
+                
+                required_providers {
+                  azurerm = {
+                    source  = "hashicorp/azurerm"
+                    version = "~> 3.0"
+                  }
+                }
+              }
+              
+              provider "azurerm" {
+                features {}
+              }
+              
+              # This will fail - azure_region variable is not defined
+              resource "azurerm_resource_group" "test" {
+                name     = "rg-test-${var.environment}"
+                location = var.azure_region  # ← ERROR: Variable not defined
+              }
+              EOF
+              
+              # Create variables.tf WITHOUT azure_region
+              cat > variables.tf << 'EOF'
+              variable "environment" {
+                description = "Environment name"
+                type        = string
+                default     = "test"
+              }
+              
+              # Notice: azure_region is NOT defined here
+              # This is the deliberate error
+              EOF
+              
+              echo "Created broken Terraform configuration"
+              cat main.tf
+              echo "---"
+              cat variables.tf
+            displayName: 'Create Broken Terraform Config'
+          
+          # Terraform Init
+          - bash: |
+              cd terraform-test
+              terraform init
+            displayName: 'Terraform Init'
+          
+          # Terraform Plan (This will fail)
+          - bash: |
+              cd terraform-test
+              terraform plan
+            displayName: 'Terraform Plan (Expected to Fail)'

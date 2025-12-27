@@ -1,0 +1,61 @@
+# Test Scenario 2: Invalid Azure Region
+# This pipeline will fail because of invalid region name
+
+trigger: none
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+  - stage: Infrastructure
+    displayName: 'Deploy Infrastructure (Will Fail)'
+    jobs:
+      - job: TerraformDeploy
+        displayName: 'Terraform Apply'
+        steps:
+          - task: TerraformInstaller@0
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: 'latest'
+          
+          - bash: |
+              mkdir -p terraform-test
+              cd terraform-test
+              
+              # Create main.tf with INVALID region
+              cat > main.tf << 'EOF'
+              terraform {
+                required_version = ">= 1.0"
+                required_providers {
+                  azurerm = {
+                    source  = "hashicorp/azurerm"
+                    version = "~> 3.0"
+                  }
+                }
+              }
+              
+              provider "azurerm" {
+                features {}
+                skip_provider_registration = true
+              }
+              
+              # This will fail - invalid region format
+              resource "azurerm_resource_group" "test" {
+                name     = "rg-test-region"
+                location = "east-us"  # ← ERROR: Should be "eastus" not "east-us"
+              }
+              EOF
+              
+              echo "Created Terraform with invalid region"
+              cat main.tf
+            displayName: 'Create Terraform with Invalid Region'
+          
+          - bash: |
+              cd terraform-test
+              terraform init
+            displayName: 'Terraform Init'
+          
+          - bash: |
+              cd terraform-test
+              terraform plan
+            displayName: 'Terraform Plan (Expected to Fail)'

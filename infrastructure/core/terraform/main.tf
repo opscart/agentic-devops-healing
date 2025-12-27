@@ -24,6 +24,10 @@ provider "azurerm" {
       purge_soft_delete_on_destroy = true
       recover_soft_deleted_key_vaults = true
     }
+    
+    resource_group {
+      prevent_deletion_if_contains_resources = false
+    }
   }
 }
 
@@ -140,10 +144,10 @@ resource "azurerm_cognitive_deployment" "gpt4o" {
     version = "2024-11-20"  # Latest stable version
   }
   
-  sku {
-    name     = "Standard"
-    capacity = 10  # 10K tokens per minute
+  scale {
+    type     = "Standard"
   }
+  rai_policy_name = "Microsoft.Default"
 }
 
 ################################################################################
@@ -215,7 +219,7 @@ resource "azurerm_service_plan" "main" {
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
   os_type             = "Linux"
-  sku_name            = "Y1"  # Consumption plan (cheapest)
+  sku_name            = "Y1"  # Consumption plan (cheapest) 
   
   tags = var.common_tags
 }
