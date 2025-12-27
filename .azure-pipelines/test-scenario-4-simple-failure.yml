@@ -1,5 +1,4 @@
 # Test Scenario 4: Simple Failure
-# Quick test to verify webhook integration
 
 trigger: none
 
@@ -14,7 +13,7 @@ stages:
         displayName: 'Deliberate Failure'
         steps:
           - bash: |
-              echo "Simulating a pipeline failure..."
+              echo "🚨 Simulating a pipeline failure..."
               echo "Error: This is a test failure"
               exit 1
             displayName: 'Fail Deliberately'

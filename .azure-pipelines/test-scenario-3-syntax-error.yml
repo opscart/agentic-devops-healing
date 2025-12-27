@@ -1,5 +1,4 @@
 # Test Scenario 3: Terraform Syntax Error
-# This pipeline will fail because of HCL syntax error
 
 trigger: none
 
@@ -13,16 +12,19 @@ stages:
       - job: TerraformValidate
         displayName: 'Terraform Validate'
         steps:
-          - task: TerraformInstaller@0
+          # Install Terraform
+          - bash: |
+              wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+              echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+              sudo apt update && sudo apt install terraform -y
+              terraform --version
             displayName: 'Install Terraform'
-            inputs:
-              terraformVersion: 'latest'
           
+          # Create broken config
           - bash: |
               mkdir -p terraform-test
               cd terraform-test
               
-              # Create main.tf with SYNTAX ERROR
               cat > main.tf << 'EOF'
               terraform {
                 required_version = ">= 1.0"
@@ -39,7 +41,7 @@ stages:
               }
               
               resource "azurerm_resource_group" "test" {
-                # ← ERROR: Missing closing brace for string interpolation
+                # ← ERROR: Missing closing brace in interpolation
                 name     = "rg-${var.prefix-${var.environment}"
                 location = "eastus"
               }
@@ -53,7 +55,7 @@ stages:
               }
               EOF
               
-              echo "Created Terraform with syntax error"
+              echo "📝 Created Terraform with syntax error"
               cat main.tf
             displayName: 'Create Terraform with Syntax Error'
           

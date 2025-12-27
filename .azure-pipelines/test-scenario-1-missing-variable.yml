@@ -17,11 +17,14 @@ stages:
       - job: TerraformDeploy
         displayName: 'Terraform Apply'
         steps:
-          # Install Terraform
-          - task: TerraformInstaller@0
+          # Install Terraform via script (no extension needed)
+          - bash: |
+              echo "Installing Terraform..."
+              wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+              echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+              sudo apt update && sudo apt install terraform -y
+              terraform --version
             displayName: 'Install Terraform'
-            inputs:
-              terraformVersion: 'latest'
           
           # Create broken Terraform code
           - bash: |
@@ -43,6 +46,7 @@ stages:
               
               provider "azurerm" {
                 features {}
+                skip_provider_registration = true
               }
               
               # This will fail - azure_region variable is not defined
@@ -64,20 +68,32 @@ stages:
               # This is the deliberate error
               EOF
               
-              echo "Created broken Terraform configuration"
+              echo "📝 Created broken Terraform configuration"
+              echo ""
+              echo "main.tf:"
               cat main.tf
-              echo "---"
+              echo ""
+              echo "variables.tf:"
               cat variables.tf
             displayName: 'Create Broken Terraform Config'
           
           # Terraform Init
           - bash: |
               cd terraform-test
+              echo "🔧 Running terraform init..."
               terraform init
             displayName: 'Terraform Init'
+          
+          # Terraform Validate
+          - bash: |
+              cd terraform-test
+              echo "✅ Running terraform validate..."
+              terraform validate
+            displayName: 'Terraform Validate'
           
           # Terraform Plan (This will fail)
           - bash: |
               cd terraform-test
+              echo "📊 Running terraform plan..."
               terraform plan
             displayName: 'Terraform Plan (Expected to Fail)'
