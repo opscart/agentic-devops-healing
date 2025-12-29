@@ -1,4 +1,3 @@
-# Pipeline 3: Invalid Syntax# Test Scenario 3: Terraform Syntax Error
 trigger:
   branches:
     include:
@@ -9,24 +8,22 @@ pool:
 
 stages:
   - stage: Infrastructure
-    displayName: 'Validate Terraform'
     jobs:
       - job: TerraformValidate
-        displayName: 'Terraform Validate'
         steps:
           - bash: |
-              wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
-              echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/services.list.d/hashicorp.list
-              sudo apt update && sudo apt install terraform -y
+              # Use snap instead
+              sudo snap install terraform --classic
+              terraform --version
             displayName: 'Install Terraform'
           
           - bash: |
               cd $(Build.SourcesDirectory)/infrastructure/test-apps/infra-only/terraform/scenarios/invalid-syntax
               
-              echo "main.tf:"
+              echo "📝 main.tf:"
               cat main.tf
               echo ""
               
               terraform init
               terraform validate
-            displayName: 'Terraform Validate (Will Fail)'
+            displayName: 'Terraform Validate (Will Fail on Syntax)'
