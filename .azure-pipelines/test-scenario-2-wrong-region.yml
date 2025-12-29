@@ -1,82 +1,45 @@
-# Test Scenario 2: Invalid Azure Region
-
-trigger: none
+# Pipeline 2: Wrong Region
+# Test Scenario 2: Wrong Azure Region Format
+trigger:
+  branches:
+    include:
+    - main
 
 pool:
   vmImage: 'ubuntu-latest'
 
 stages:
   - stage: Infrastructure
-    displayName: 'Deploy Infrastructure (Will Fail)'
+    displayName: 'Validate Terraform'
     jobs:
-      - job: TerraformDeploy
-        displayName: 'Terraform Plan with Invalid Region'
+      - job: TerraformValidate
+        displayName: 'Terraform Validate & Plan'
         steps:
-          # Install Terraform
           - bash: |
               wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
               echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
               sudo apt update && sudo apt install terraform -y
-              terraform --version
             displayName: 'Install Terraform'
           
-          # Create broken config
-          - bash: |
-              mkdir -p terraform-test
-              cd terraform-test
-              
-              cat > main.tf << 'EOF'
-              terraform {
-                required_version = ">= 1.0"
-                required_providers {
-                  azurerm = {
-                    source  = "hashicorp/azurerm"
-                    version = "~> 3.0"
-                  }
-                  random = {
-                    source = "hashicorp/random"
-                    version = "~> 3.0"
-                  }
-                }
-              }
-              
-              provider "azurerm" {
-                features {}
-                skip_provider_registration = true
-              }
-              
-              # Use random string to avoid conflicts
-              resource "random_string" "suffix" {
-                length  = 8
-                special = false
-                upper   = false
-              }
-              
-              # This will fail - invalid region format
-              resource "azurerm_resource_group" "test" {
-                name     = "rg-test-region-${random_string.suffix.result}"
-                location = "east-us"  # ← ERROR: Should be "eastus"
-              }
-              
-              output "test" {
-                value = azurerm_resource_group.test.id
-              }
-              EOF
-              
-              echo "📝 Created Terraform with invalid region"
-              cat main.tf
-            displayName: 'Create Terraform with Invalid Region'
-          
-          - bash: |
-              cd terraform-test
-              terraform init
-            displayName: 'Terraform Init'
-          
-          # This step will catch the error
-          - bash: |
-              cd terraform-test
-              echo "Running terraform plan with invalid region..."
-              terraform plan -out=tfplan
-            displayName: 'Terraform Plan (Expected to Fail)'
-            env:
-              ARM_SKIP_PROVIDER_REGISTRATION: 'true'
+          - task: AzureCLI@2
+            displayName: 'Terraform Validate'
+            inputs:
+              azureSubscription: 'ai-poc'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              inlineScript: |
+                cd $(Build.SourcesDirectory)/infrastructure/test-apps/infra-only/terraform/scenarios/wrong-region
+                
+                export ARM_CLIENT_ID=$servicePrincipalId
+                export ARM_CLIENT_SECRET=$servicePrincipalKey
+                export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+                export ARM_TENANT_ID=$tenantId
+                
+                echo "main.tf:"
+                cat main.tf
+                echo ""
+                
+                terraform init
+                terraform validate
+                terraform plan

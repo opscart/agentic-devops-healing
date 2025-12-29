@@ -1,7 +1,12 @@
+# .azure-pipelines/test-scenario-1-missing-variable.yml
 # Test Scenario 1: Missing Terraform Variable
-# This pipeline will fail because a required variable is not defined
+# This will FAIL initially, but SUCCEED after AI fixes it
 
-trigger: none  # Manual trigger only
+trigger:
+  branches:
+    include:
+    - main
+    - refs/pull/*/merge
 
 pool:
   vmImage: 'ubuntu-latest'
@@ -10,90 +15,43 @@ variables:
   - name: SCENARIO
     value: 'missing-variable'
 
+# Update .azure-pipelines/test-scenario-1-missing-variable.yml
+
 stages:
   - stage: Infrastructure
-    displayName: 'Deploy Infrastructure (Will Fail)'
+    displayName: 'Validate Terraform'
     jobs:
-      - job: TerraformDeploy
-        displayName: 'Terraform Apply'
+      - job: TerraformValidate
+        displayName: 'Terraform Validate & Plan'
         steps:
-          # Install Terraform via script (no extension needed)
           - bash: |
-              echo "Installing Terraform..."
               wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
               echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
               sudo apt update && sudo apt install terraform -y
-              terraform --version
             displayName: 'Install Terraform'
           
-          # Create broken Terraform code
-          - bash: |
-              mkdir -p terraform-test
-              cd terraform-test
-              
-              # Create main.tf with missing variable reference
-              cat > main.tf << 'EOF'
-              terraform {
-                required_version = ">= 1.0"
+          # ADD THIS: Azure CLI Login
+          - task: AzureCLI@2
+            displayName: 'Terraform Validate with Azure Auth'
+            inputs:
+              azureSubscription: 'ai-poc'  # ← Add your service connection
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              inlineScript: |
+                cd $(Build.SourcesDirectory)/infrastructure/test-apps/infra-only/terraform/scenarios/missing-variable
                 
-                required_providers {
-                  azurerm = {
-                    source  = "hashicorp/azurerm"
-                    version = "~> 3.0"
-                  }
-                }
-              }
-              
-              provider "azurerm" {
-                features {}
-                skip_provider_registration = true
-              }
-              
-              # This will fail - azure_region variable is not defined
-              resource "azurerm_resource_group" "test" {
-                name     = "rg-test-${var.environment}"
-                location = var.azure_region  # ← ERROR: Variable not defined
-              }
-              EOF
-              
-              # Create variables.tf WITHOUT azure_region
-              cat > variables.tf << 'EOF'
-              variable "environment" {
-                description = "Environment name"
-                type        = string
-                default     = "test"
-              }
-              
-              # Notice: azure_region is NOT defined here
-              # This is the deliberate error
-              EOF
-              
-              echo "📝 Created broken Terraform configuration"
-              echo ""
-              echo "main.tf:"
-              cat main.tf
-              echo ""
-              echo "variables.tf:"
-              cat variables.tf
-            displayName: 'Create Broken Terraform Config'
-          
-          # Terraform Init
-          - bash: |
-              cd terraform-test
-              echo "🔧 Running terraform init..."
-              terraform init
-            displayName: 'Terraform Init'
-          
-          # Terraform Validate
-          - bash: |
-              cd terraform-test
-              echo "✅ Running terraform validate..."
-              terraform validate
-            displayName: 'Terraform Validate'
-          
-          # Terraform Plan (This will fail)
-          - bash: |
-              cd terraform-test
-              echo "📊 Running terraform plan..."
-              terraform plan
-            displayName: 'Terraform Plan (Expected to Fail)'
+                echo "Working directory: $(pwd)"
+                echo "variables.tf content:"
+                cat variables.tf
+                echo ""
+                
+                # Set Azure credentials for Terraform
+                export ARM_CLIENT_ID=$servicePrincipalId
+                export ARM_CLIENT_SECRET=$servicePrincipalKey
+                export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+                export ARM_TENANT_ID=$tenantId
+                
+                terraform init
+                terraform validate
+                terraform plan
