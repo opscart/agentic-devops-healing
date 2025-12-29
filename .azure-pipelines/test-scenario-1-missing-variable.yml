@@ -1,7 +1,12 @@
+# .azure-pipelines/test-scenario-1-missing-variable.yml
 # Test Scenario 1: Missing Terraform Variable
-# This pipeline will fail because a required variable is not defined
+# This will FAIL initially, but SUCCEED after AI fixes it
 
-trigger: none  # Manual trigger only
+trigger:
+  branches:
+    include:
+    - main
+    - refs/pull/*/merge
 
 pool:
   vmImage: 'ubuntu-latest'
@@ -12,12 +17,12 @@ variables:
 
 stages:
   - stage: Infrastructure
-    displayName: 'Deploy Infrastructure (Will Fail)'
+    displayName: 'Deploy Infrastructure'
     jobs:
       - job: TerraformDeploy
-        displayName: 'Terraform Apply'
+        displayName: 'Terraform Validate & Plan'
         steps:
-          # Install Terraform via script (no extension needed)
+          # Install Terraform
           - bash: |
               echo "Installing Terraform..."
               wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
@@ -26,74 +31,40 @@ stages:
               terraform --version
             displayName: 'Install Terraform'
           
-          # Create broken Terraform code
+          # Use ACTUAL files from repository
           - bash: |
-              mkdir -p terraform-test
-              cd terraform-test
+              cd $(Build.SourcesDirectory)/infrastructure/test-apps/infra-only/terraform/scenarios/missing-variable
               
-              # Create main.tf with missing variable reference
-              cat > main.tf << 'EOF'
-              terraform {
-                required_version = ">= 1.0"
-                
-                required_providers {
-                  azurerm = {
-                    source  = "hashicorp/azurerm"
-                    version = "~> 3.0"
-                  }
-                }
-              }
-              
-              provider "azurerm" {
-                features {}
-                skip_provider_registration = true
-              }
-              
-              # This will fail - azure_region variable is not defined
-              resource "azurerm_resource_group" "test" {
-                name     = "rg-test-${var.environment}"
-                location = var.azure_region  # ← ERROR: Variable not defined
-              }
-              EOF
-              
-              # Create variables.tf WITHOUT azure_region
-              cat > variables.tf << 'EOF'
-              variable "environment" {
-                description = "Environment name"
-                type        = string
-                default     = "test"
-              }
-              
-              # Notice: azure_region is NOT defined here
-              # This is the deliberate error
-              EOF
-              
-              echo "📝 Created broken Terraform configuration"
+              echo "📁 Working directory: $(pwd)"
               echo ""
-              echo "main.tf:"
+              echo "📄 Files in directory:"
+              ls -la
+              echo ""
+              echo "📝 main.tf:"
               cat main.tf
               echo ""
-              echo "variables.tf:"
+              echo "📝 variables.tf:"
               cat variables.tf
-            displayName: 'Create Broken Terraform Config'
+              echo ""
+            displayName: 'Show Terraform Config'
           
           # Terraform Init
           - bash: |
-              cd terraform-test
+              cd $(Build.SourcesDirectory)/infrastructure/test-apps/infra-only/terraform/scenarios/missing-variable
               echo "🔧 Running terraform init..."
               terraform init
             displayName: 'Terraform Init'
           
           # Terraform Validate
           - bash: |
-              cd terraform-test
+              cd $(Build.SourcesDirectory)/infrastructure/test-apps/infra-only/terraform/scenarios/missing-variable
               echo "✅ Running terraform validate..."
               terraform validate
             displayName: 'Terraform Validate'
           
-          # Terraform Plan (This will fail)
+          # Terraform Plan
           - bash: |
-              cd terraform-test
+              cd $(Build.SourcesDirectory)/infrastructure/test-apps/infra-only/terraform/scenarios/missing-variable
               echo "📊 Running terraform plan..."
               terraform plan
-            displayName: 'Terraform Plan (Expected to Fail)'
+            displayName: 'Terraform Plan'
