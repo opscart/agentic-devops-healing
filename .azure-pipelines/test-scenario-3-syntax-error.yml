@@ -1,70 +1,32 @@
-# Test Scenario 3: Terraform Syntax Error
-
-trigger: none
+# Pipeline 3: Invalid Syntax# Test Scenario 3: Terraform Syntax Error
+trigger:
+  branches:
+    include:
+    - main
 
 pool:
   vmImage: 'ubuntu-latest'
 
 stages:
   - stage: Infrastructure
-    displayName: 'Parse Terraform (Will Fail)'
+    displayName: 'Validate Terraform'
     jobs:
       - job: TerraformValidate
         displayName: 'Terraform Validate'
         steps:
-          # Install Terraform
           - bash: |
               wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
-              echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+              echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/services.list.d/hashicorp.list
               sudo apt update && sudo apt install terraform -y
-              terraform --version
             displayName: 'Install Terraform'
           
-          # Create broken config
           - bash: |
-              mkdir -p terraform-test
-              cd terraform-test
+              cd $(Build.SourcesDirectory)/infrastructure/test-apps/infra-only/terraform/scenarios/invalid-syntax
               
-              cat > main.tf << 'EOF'
-              terraform {
-                required_version = ">= 1.0"
-                required_providers {
-                  azurerm = {
-                    source  = "hashicorp/azurerm"
-                    version = "~> 3.0"
-                  }
-                }
-              }
-              
-              provider "azurerm" {
-                features {}
-              }
-              
-              resource "azurerm_resource_group" "test" {
-                # ← ERROR: Missing closing brace in interpolation
-                name     = "rg-${var.prefix-${var.environment}"
-                location = "eastus"
-              }
-              
-              variable "prefix" {
-                default = "test"
-              }
-              
-              variable "environment" {
-                default = "dev"
-              }
-              EOF
-              
-              echo "📝 Created Terraform with syntax error"
+              echo "main.tf:"
               cat main.tf
-            displayName: 'Create Terraform with Syntax Error'
-          
-          - bash: |
-              cd terraform-test
+              echo ""
+              
               terraform init
-            displayName: 'Terraform Init'
-          
-          - bash: |
-              cd terraform-test
               terraform validate
-            displayName: 'Terraform Validate (Expected to Fail)'
+            displayName: 'Terraform Validate (Will Fail)'
