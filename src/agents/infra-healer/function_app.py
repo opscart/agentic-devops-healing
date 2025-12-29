@@ -307,15 +307,26 @@ async def execute_remediation(rca_result: dict, failure_context: dict) -> dict:
                     
                     pr_url = pr_result.get('pr_url', 'PR created')
                     pr_number = pr_result.get('pr_id', 'N/A')
+                    pr_status = pr_result.get('status', 'created')
                     
-                    logging.info(f"GitHub PR #{pr_number} created: {pr_url}")
-                    
-                    return {
-                        "action": "AUTO_FIX_PR_CREATED",
-                        "details": f"Created GitHub PR #{pr_number}",
-                        "pr_url": pr_url,
-                        "pr_number": pr_number
-                    }
+                    # Check if it was a duplicate
+                    if pr_status == 'duplicate_prevented':
+                            logging.info(f"Found existing GitHub PR #{pr_number}: {pr_url}")
+                            return {
+                                "action": "EXISTING_PR_FOUND",  # ← Change action
+                                "details": f"Found existing GitHub PR #{pr_number}",  # ← Change message
+                                "pr_url": pr_url,
+                                "pr_number": pr_number
+                            }
+                    else:
+                        logging.info(f"GitHub PR #{pr_number} created: {pr_url}")
+                        
+                        return {
+                            "action": "AUTO_FIX_PR_CREATED",
+                            "details": f"Created GitHub PR #{pr_number}",
+                            "pr_url": pr_url,
+                            "pr_number": pr_number
+                        }
                 
                 except Exception as pr_error:
                     logging.error(f"GitHub PR creation failed: {str(pr_error)}")
