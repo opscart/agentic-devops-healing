@@ -15,56 +15,43 @@ variables:
   - name: SCENARIO
     value: 'missing-variable'
 
+# Update .azure-pipelines/test-scenario-1-missing-variable.yml
+
 stages:
   - stage: Infrastructure
-    displayName: 'Deploy Infrastructure'
+    displayName: 'Validate Terraform'
     jobs:
-      - job: TerraformDeploy
+      - job: TerraformValidate
         displayName: 'Terraform Validate & Plan'
         steps:
-          # Install Terraform
           - bash: |
-              echo "Installing Terraform..."
               wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
               echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
               sudo apt update && sudo apt install terraform -y
-              terraform --version
             displayName: 'Install Terraform'
           
-          # Use ACTUAL files from repository
-          - bash: |
-              cd $(Build.SourcesDirectory)/infrastructure/test-apps/infra-only/terraform/scenarios/missing-variable
-              
-              echo "📁 Working directory: $(pwd)"
-              echo ""
-              echo "📄 Files in directory:"
-              ls -la
-              echo ""
-              echo "📝 main.tf:"
-              cat main.tf
-              echo ""
-              echo "📝 variables.tf:"
-              cat variables.tf
-              echo ""
-            displayName: 'Show Terraform Config'
-          
-          # Terraform Init
-          - bash: |
-              cd $(Build.SourcesDirectory)/infrastructure/test-apps/infra-only/terraform/scenarios/missing-variable
-              echo "🔧 Running terraform init..."
-              terraform init
-            displayName: 'Terraform Init'
-          
-          # Terraform Validate
-          - bash: |
-              cd $(Build.SourcesDirectory)/infrastructure/test-apps/infra-only/terraform/scenarios/missing-variable
-              echo "✅ Running terraform validate..."
-              terraform validate
-            displayName: 'Terraform Validate'
-          
-          # Terraform Plan
-          - bash: |
-              cd $(Build.SourcesDirectory)/infrastructure/test-apps/infra-only/terraform/scenarios/missing-variable
-              echo "📊 Running terraform plan..."
-              terraform plan
-            displayName: 'Terraform Plan'
+          # ADD THIS: Azure CLI Login
+          - task: AzureCLI@2
+            displayName: 'Terraform Validate with Azure Auth'
+            inputs:
+              azureSubscription: 'ai-poc'  # ← Add your service connection
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              inlineScript: |
+                cd $(Build.SourcesDirectory)/infrastructure/test-apps/infra-only/terraform/scenarios/missing-variable
+                
+                echo "Working directory: $(pwd)"
+                echo "variables.tf content:"
+                cat variables.tf
+                echo ""
+                
+                # Set Azure credentials for Terraform
+                export ARM_CLIENT_ID=$servicePrincipalId
+                export ARM_CLIENT_SECRET=$servicePrincipalKey
+                export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+                export ARM_TENANT_ID=$tenantId
+                
+                terraform init
+                terraform validate
+                terraform plan
