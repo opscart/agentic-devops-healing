@@ -244,7 +244,8 @@ async def generic_analysis(context: dict, openai_client) -> dict:
 async def execute_remediation(rca_result: dict, failure_context: dict) -> dict:
     """
     Execute remediation based on RCA results:
-    - HIGH confidence infrastructure issues: Create fix PR (GitHub or Azure Repos)
+    - HIGH confidence (80%+) infrastructure issues: Create PR with actual code
+    - MEDIUM confidence (65-80%): Create PR with suggestions
     - Everything else: Post detailed comment or create work item
     """
     import os
@@ -257,23 +258,50 @@ async def execute_remediation(rca_result: dict, failure_context: dict) -> dict:
         
         logging.info(f"Remediation decision: confidence={confidence}, can_autofix={can_autofix}, category={category}")
         
+        # Skip if analysis failed or very low confidence
+        if confidence < 0.5:
+            logging.warning(f"Confidence too low ({confidence:.2f}) - skipping remediation")
+            return {
+                "action": "SKIPPED",
+                "details": f"Analysis confidence too low ({confidence * 100:.0f}%) - manual investigation required",
+                "category": category,
+                "note": "No action taken due to low confidence"
+            }
+        
         ado_client = AzureDevOpsClient()
         
-        # HIGH confidence + can autofix = Create PR
+        # HIGH confidence + can autofix = Try to create PR
         if confidence >= 0.65 and can_autofix:
-            logging.info("✨ High confidence - attempting auto-fix")
             
-            # Determine if GitHub or Azure Repos
+            # Determine if we should generate actual code (80%+) or just suggestions (65-80%)
+            generate_code = confidence >= 0.80
+            
+            if generate_code:
+                logging.info("✨ Very high confidence (80%+) - generating actual code")
+                from shared.code_generator import generate_terraform_fix
+                file_changes = generate_terraform_fix(rca_result, failure_context)
+                
+                if not file_changes:
+                    logging.warning("Code generation not implemented for this pattern - using suggestions")
+                    file_changes = {}
+                else:
+                    logging.info(f"Generated {len(file_changes)} file change(s)")
+            else:
+                logging.info("High confidence (65-80%) - creating suggestion PR")
+                file_changes = {}  # Suggestion-only PR
+            
+            # Determine repository platform
             repo_url = failure_context.get('repo_url', '')
             is_github = True  # Default to GitHub
             if repo_url:
                 is_github = 'github.com' in repo_url.lower()
             
             if is_github:
+                # ============================================
                 # GitHub PR Creation
+                # ============================================
                 try:
                     from shared.github_operations import GitHubOperations
-                    
                     github_ops = GitHubOperations()
                     
                     # Get repo details
@@ -295,13 +323,13 @@ async def execute_remediation(rca_result: dict, failure_context: dict) -> dict:
                     
                     logging.info(f"🔧 Creating GitHub PR for {repo_owner}/{repo_name}, branch: {source_branch}")
                     
-                    # Create the PR
+                    # Create the PR with file changes (empty dict = suggestions only)
                     pr_result = await github_ops.create_fix_pr(
                         repo_owner=repo_owner,
                         repo_name=repo_name,
                         source_branch=source_branch,
                         fix_description=rca_result.get('explanation', 'Auto-generated fix'),
-                        file_changes={},
+                        file_changes=file_changes,  # ← Contains actual code if confidence >= 80%
                         rca=rca_result
                     )
                     
@@ -311,21 +339,24 @@ async def execute_remediation(rca_result: dict, failure_context: dict) -> dict:
                     
                     # Check if it was a duplicate
                     if pr_status == 'duplicate_prevented':
-                            logging.info(f"Found existing GitHub PR #{pr_number}: {pr_url}")
-                            return {
-                                "action": "EXISTING_PR_FOUND",  # ← Change action
-                                "details": f"Found existing GitHub PR #{pr_number}",  # ← Change message
-                                "pr_url": pr_url,
-                                "pr_number": pr_number
-                            }
+                        logging.info(f"Found existing GitHub PR #{pr_number}: {pr_url}")
+                        return {
+                            "action": "EXISTING_PR_FOUND",
+                            "details": f"Found existing GitHub PR #{pr_number}",
+                            "pr_url": pr_url,
+                            "pr_number": pr_number
+                        }
                     else:
                         logging.info(f"GitHub PR #{pr_number} created: {pr_url}")
                         
                         return {
                             "action": "AUTO_FIX_PR_CREATED",
-                            "details": f"Created GitHub PR #{pr_number}",
+                            "details": f"Created GitHub PR #{pr_number}" + (
+                                " with code changes" if file_changes else " with fix suggestions"
+                            ),
                             "pr_url": pr_url,
-                            "pr_number": pr_number
+                            "pr_number": pr_number,
+                            "has_code_changes": bool(file_changes)
                         }
                 
                 except Exception as pr_error:
@@ -347,13 +378,14 @@ async def execute_remediation(rca_result: dict, failure_context: dict) -> dict:
                     }
             
             else:
+                # ============================================
                 # Azure Repos PR Creation
+                # ============================================
                 try:
                     from shared.git_operations import GitOperations
-                    
                     git_ops = GitOperations()
-                    repo_name = "agentic-devops-healing"
                     
+                    repo_name = "agentic-devops-healing"
                     if repo_url and '/_git/' in repo_url:
                         repo_name = repo_url.split('/_git/')[-1].split('?')[0].strip('/')
                     
@@ -366,14 +398,15 @@ async def execute_remediation(rca_result: dict, failure_context: dict) -> dict:
                         repo_name=repo_name,
                         source_branch=source_branch,
                         fix_description=rca_result.get('explanation', ''),
-                        file_changes={},
+                        file_changes=file_changes,
                         rca=rca_result
                     )
                     
                     return {
                         "action": "AUTO_FIX_PR_CREATED",
-                        "details": f"Created Azure PR",
-                        "pr_url": pr_result.get('pr_url')
+                        "details": f"Created Azure Repos PR",
+                        "pr_url": pr_result.get('pr_url'),
+                        "has_code_changes": bool(file_changes)
                     }
                 
                 except Exception as pr_error:
@@ -391,18 +424,9 @@ async def execute_remediation(rca_result: dict, failure_context: dict) -> dict:
                         "work_item_id": work_item_id
                     }
         
+        # MEDIUM/LOW confidence or can't autofix = Create work item
         else:
-            if confidence < 0.5:
-                # Low confidence or can't autofix - create work item
-                logging.warning(f"Confidence too low ({confidence}) - skipping work item creation")
-                return {
-                    "action": "SKIPPED",
-                    "details": f"Analysis confidence too low ({confidence * 100:.0f}%) - manual investigation required",
-                    "category": category,
-                    "note": "No work item created due to low confidence"
-                }
-            # Create work item for medium confidence
-            logging.info("Creating work item (confidence too low for auto-fix)")
+            logging.info(f"Creating work item (confidence: {confidence:.2f}, can_autofix: {can_autofix})")
             
             work_item_id = await ado_client.create_work_item(
                 project=failure_context.get('project_name', 'AI-DevOps-POC'),
@@ -424,7 +448,6 @@ async def execute_remediation(rca_result: dict, failure_context: dict) -> dict:
             "action": "ERROR",
             "details": str(e)
         }
-
 def format_rca_comment(rca_result: dict) -> str:
     """Format RCA results as Markdown comment"""
     return f"""
