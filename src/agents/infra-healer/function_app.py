@@ -392,7 +392,16 @@ async def execute_remediation(rca_result: dict, failure_context: dict) -> dict:
                     }
         
         else:
-            # Low confidence or can't autofix - create work item
+            if confidence < 0.5:
+                # Low confidence or can't autofix - create work item
+                logging.warning(f"Confidence too low ({confidence}) - skipping work item creation")
+                return {
+                    "action": "SKIPPED",
+                    "details": f"Analysis confidence too low ({confidence * 100:.0f}%) - manual investigation required",
+                    "category": category,
+                    "note": "No work item created due to low confidence"
+                }
+            # Create work item for medium confidence
             logging.info("Creating work item (confidence too low for auto-fix)")
             
             work_item_id = await ado_client.create_work_item(

@@ -51,12 +51,33 @@ class OpenAIClient:
                 "content": prompt
             })
             
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=0.3,
-                max_tokens=2000
+            # Check if using reasoning models (o1, o3, gpt-5.x series)
+            model = self.model.lower()
+            is_reasoning_model = (
+                model.startswith('o1') or 
+                model.startswith('o3') or 
+                'gpt-5' in model or
+                'gpt5' in model
             )
+            
+            logging.info(f"Using model: {self.model}, is_reasoning_model: {is_reasoning_model}")
+            
+            # Build request parameters
+            request_params = {
+                "model": self.model,
+                "messages": messages,
+                "temperature": 0.3,
+            }
+            
+            # Use appropriate token parameter
+            if is_reasoning_model:
+                request_params["max_completion_tokens"] = 2000
+                logging.info("Using max_completion_tokens for reasoning model")
+            else:
+                request_params["max_tokens"] = 2000
+                logging.info("Using max_tokens for standard model")
+            
+            response = self.client.chat.completions.create(**request_params)
             
             return response.choices[0].message.content
             

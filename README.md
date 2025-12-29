@@ -1,140 +1,235 @@
 # Agentic DevOps Healing
 
-> **Autonomous AI-powered system for detecting and remediating Azure DevOps pipeline failures**
+An AI-powered autonomous pipeline remediation system that detects, analyzes, and creates fix proposals for CI/CD failures.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Azure](https://img.shields.io/badge/Azure-0078D4?logo=microsoft-azure&logoColor=white)](https://azure.microsoft.com)
-[![Terraform](https://img.shields.io/badge/Terraform-7B42BC?logo=terraform&logoColor=white)](https://www.terraform.io/)
+**Status:** Research Prototype | **Phase:** Local Development & Testing | **Last Updated:** December 2025
 
-## 🎯 Overview
+## Overview
 
-An experimental research project exploring autonomous remediation of DevOps pipeline failures using Large Language Models (LLMs). The system analyzes failure logs, identifies root causes, and automatically generates fixes for infrastructure and build issues.
+This research project explores autonomous remediation of DevOps pipeline failures using Large Language Models. The system analyzes Azure DevOps pipeline failures, performs root cause analysis with GPT-5.2, and automatically creates GitHub pull requests with detailed fix suggestions.
 
-**Current Status:** Phase 1 - Infrastructure Healing (Terraform/YAML)
+**Current Implementation:**
+- AI-powered failure detection and analysis
+- GitHub PR creation with fix recommendations
+- Intelligent auto-fix vs manual review decisions
+- Multi-platform integration (Azure DevOps + GitHub)
 
-## 🏗️ Architecture
+**Testing Results:**
+- Detection accuracy: 100% (5/5 scenarios)
+- Root cause analysis accuracy: 100% (5/5 scenarios)
+- Response time: 3-5 seconds average
+- Auto-fix decision accuracy: 100% (5/5 correct)
+
+## Architecture
 ```
-Pipeline Failure → Webhook → AI Agent → Root Cause Analysis → Auto-Fix PR
+Azure DevOps Pipeline Failure
+        ↓
+AI Agent (Python + GPT-5.2)
+    ├── Fetch build logs via Azure DevOps API
+    ├── Analyze with GPT-5.2
+    ├── Classify error type
+    └── Determine remediation strategy
+        ↓
+Decision Engine
+    ├── High confidence + auto-fixable → GitHub PR
+    └── Low confidence or syntax error → Work Item
+        ↓
+GitHub Pull Request
+    ├── Detailed root cause analysis
+    ├── Step-by-step fix instructions
+    ├── Code snippets
+    └── Triggers CI/CD validation
+        ↓
+Developer Review & Merge
 ```
 
-The agent uses Azure OpenAI (GPT-4o/o1) to:
-1. Parse build logs and error messages
-2. Compare with last successful build
-3. Classify failure type (config, code, infra, test)
-4. Generate remediation code
-5. Create Pull Request with fix
+## Current Capabilities
 
-## 📋 Current Capabilities
+**Supported Failure Types:**
+- Missing Terraform variables
+- Invalid Azure region formats
+- Terraform syntax errors
+- Configuration errors
 
-### ✅ Infrastructure Healer (Phase 1)
-- Terraform missing variables
-- Azure region typos
-- Pipeline YAML syntax errors
-- Terraform state conflicts
+**Integration:**
+- Azure DevOps (build logs, work items)
+- GitHub (PR creation, branch management)
+- OpenAI GPT-5.2 (analysis)
 
-### 🚧 Planned Capabilities
-- **Build Healer:** Maven/Gradle dependency conflicts, Docker build failures
-- **Deployment Healer:** AKS ImagePullBackOff, App Service issues
-- **Test Healer:** Flaky test detection, integration test failures
+**Safety Features:**
+- Duplicate PR prevention
+- Syntax errors always escalate to human review
+- All PRs require human approval before merge
+- Confidence-based decision making
 
-## 🚀 Quick Start
+## Technology Stack
+
+- **Language:** Python 3.11
+- **AI Model:** OpenAI GPT-5.2
+- **Platform:** Azure Functions (local development)
+- **Integration:** Azure DevOps Python API, PyGithub
+- **Infrastructure:** Terraform (for future Azure deployment)
+
+## Quick Start
 
 ### Prerequisites
-- Azure subscription (free $200 credit available)
-- Azure CLI installed
-- Terraform >= 1.5
+
 - Python 3.11+
-- Azure DevOps organization
+- Azure DevOps organization with pipelines
+- GitHub repository
+- OpenAI API key
+- Azure Functions Core Tools
 
-### Deploy Agent Infrastructure
+### Local Setup
+
+1. Clone repository
 ```bash
-# Configure Azure credentials
-./scripts/setup/configure-azure-credentials.sh
-
-# Deploy core agent infrastructure
-cd infrastructure/core/terraform
-./scripts/deploy.sh
-
-# Get webhook URL
-./scripts/outputs.sh
+git clone https://github.com/opscart/agentic-devops-healing.git
+cd agentic-devops-healing
 ```
 
-### Test First Scenario
+2. Install dependencies
 ```bash
-# Deploy test app with broken Terraform
-cd infrastructure/test-apps/infra-only/terraform/scenarios/missing-variable
-terraform init
-terraform apply  # This will fail
-
-# Check Azure DevOps pipeline - agent should create fix PR
+cd src/agents/infra-healer
+python -m venv .venv
+source .venv/bin/activate  # or .venv\Scripts\activate on Windows
+pip install -r requirements.txt
 ```
 
-Full setup guide: [docs/setup/01-azure-prerequisites.md](docs/setup/01-azure-prerequisites.md)
+3. Configure environment
+```bash
+cp local.settings.json.example local.settings.json
+# Edit local.settings.json with your credentials:
+# - OPENAI_API_KEY (from openai.com)
+# - ADO_PAT (Azure DevOps Personal Access Token)
+# - GITHUB_TOKEN (GitHub Personal Access Token)
+```
 
-## 📊 Repository Structure
+4. Run locally
+```bash
+func start
+```
+
+5. Test with a pipeline failure
+```bash
+curl -X POST http://localhost:7071/api/HandleFailure \
+  -H "Content-Type: application/json" \
+  -d '{
+    "pipelineId": "YOUR_PIPELINE_ID",
+    "buildId": "YOUR_BUILD_ID",
+    "projectName": "YOUR_PROJECT"
+  }'
+```
+
+See [docs/setup/](docs/setup/) for detailed setup instructions.
+
+## Repository Structure
 ```
 agentic-devops-healing/
 ├── infrastructure/
-│   ├── core/                   # Agent infrastructure (Function, OpenAI, Storage)
-│   ├── modules/                # Reusable Terraform modules
-│   └── test-apps/              # Test workloads with deliberate failures
+│   ├── core/                      # Terraform for Azure deployment (future)
+│   └── test-apps/                 # Test scenarios
 ├── src/
-│   ├── agents/                 # Specialized healing agents
-│   │   ├── infra-healer/      # Terraform/YAML (current)
-│   │   ├── build-healer/      # Maven/Docker (planned)
-│   │   └── deployment-healer/ # AKS/App Service (planned)
-│   └── shared/                 # Common libraries (ADO, OpenAI, Git)
-├── scenarios/                  # Test case documentation
-├── docs/                       # Architecture, setup guides, research
-└── scripts/                    # Automation scripts
+│   ├── agents/
+│   │   └── infra-healer/         # Main agent implementation
+│   │       ├── analyzers/        # Failure analysis logic
+│   │       ├── function_app.py   # Azure Functions entry point
+│   │       └── requirements.txt  # Python dependencies
+│   └── shared/                    # Common libraries
+│       ├── ado_client.py         # Azure DevOps integration
+│       ├── github_operations.py  # GitHub PR automation
+│       └── openai_client.py      # OpenAI API wrapper
+├── .azure-pipelines/              # Test pipeline scenarios
+└── docs/                          # Documentation
 ```
 
-## 💰 Cost Estimation
+## Test Scenarios
 
-**Development (destroy daily):**
-- Agent infrastructure: ~$5/month
-- OpenAI API: ~$10-20/month
-- Test resources: ~$0 (destroyed after testing)
+Four deliberate failure scenarios for testing:
 
-**Total: ~$15-25/month**
+1. **Missing Variable** - Terraform references undefined variable
+2. **Wrong Region** - Invalid Azure region format ("east-us" vs "eastus")
+3. **Syntax Error** - Missing closing brace in Terraform
+4. **Simple Failure** - Generic failure for testing
 
-See [docs/guides/cost-optimization.md](docs/guides/cost-optimization.md) for details.
+Run scenarios:
+```bash
+az pipelines run --name test-scenario-1-missing-variable \
+  --organization https://dev.azure.com/YOUR_ORG \
+  --project YOUR_PROJECT
+```
 
-## 📖 Documentation
+## Limitations and Future Work
 
-- [System Architecture](docs/architecture/system-overview.md)
-- [Setup Guide](docs/setup/01-azure-prerequisites.md)
-- [Adding New Agents](docs/guides/adding-new-agent.md)
-- [Test Scenarios](scenarios/infra/)
+**Current Limitations:**
+- PRs contain fix suggestions, not actual code changes
+- Confidence scores are AI self-assessed (not statistically validated)
+- Small test set (5 scenarios)
+- Local deployment only (Azure deployment pending quota approval)
 
-## 🔬 Research
+**Planned Enhancements:**
+- Code generation for common patterns
+- Multi-model ensemble for confidence validation
+- Support for Java/Maven, Docker build failures
+- Historical success rate tracking
+- Confidence calibration based on merge outcomes
+- Azure deployment with webhooks
+
+## Research
 
 This project serves as the foundation for academic research on AI-assisted DevOps automation:
 
-- IEEE paper: "Autonomous Infrastructure Remediation using Large Language Models"
-- Metrics tracking: RCA accuracy, MTTR reduction, auto-fix success rate
-- Experiment log: [docs/research/experiment-log.md](docs/research/experiment-log.md)
+**Publications:**
+- InfoQ Article: In progress
+- IEEE Conference Paper: In progress
 
-## 🤝 Contributing
+**Research Questions:**
+- Can LLMs accurately diagnose infrastructure failures?
+- What confidence thresholds balance automation with safety?
+- How to validate AI-generated fixes before deployment?
 
-This is an experimental research project. Contributions, ideas, and feedback are welcome!
+See [docs/research/](docs/research/) for experiment logs and methodology.
 
-## 📄 License
+## Development Cost
 
-MIT License - see [LICENSE](LICENSE) for details.
+**Current (Local Development):**
+- OpenAI API: $2-5/month (testing usage)
+- Azure DevOps: Free tier
+- GitHub: Free tier
 
-## 👤 Author
+**Future (Azure Deployment):**
+- Azure Functions: ~$5/month
+- Azure OpenAI: ~$10-20/month
+- Storage/monitoring: ~$5/month
+
+## Contributing
+
+This is an experimental research project. Contributions, feedback, and ideas are welcome!
+
+**Areas for contribution:**
+- Additional failure type analyzers
+- Test scenario development
+- Documentation improvements
+- Code generation implementations
+
+## License
+
+MIT License - see LICENSE for details.
+
+## Author
 
 **Shamsher Khan**
 - Senior DevOps Engineer at GlobalLogic (Hitachi)
 - IEEE Senior Member
-- LinkedIn: [linkedin.com/in/shamsher-khan](https://www.linkedin.com/in/shamsher-khan)
+- 15+ years DevOps experience
+- DZone Contributor
 
-## 🙏 Acknowledgments
+LinkedIn: [linkedin.com/in/shamsher-khan](https://www.linkedin.com/in/shamsher-khan)
 
-- Built for Azure DevOps pipelines in pharmaceutical production environments
-- Inspired by autonomous agent frameworks and AI-assisted development tools
+## Acknowledgments
+
+Built for Azure DevOps pipelines in production pharmaceutical environments. Inspired by autonomous agent frameworks and AI-assisted development research.
 
 ---
 
-**Status:** Active Development | **Phase:** 1 of 4 | **Last Updated:** December 2024
+**Project Status:** Active Research | **Current Phase:** Prototype & Testing | **Deployment:** Local Development
