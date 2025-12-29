@@ -66,7 +66,7 @@ async def handle_failure(req: func.HttpRequest) -> func.HttpResponse:
         rca_result = await analyze_with_ai(context)
         
         # Step 3: Take action based on confidence
-        logging.info("⚡ Executing remediation...")
+        logging.info("Executing remediation...")
         action_result = await execute_remediation(rca_result, failure_context)
         
         # Return response
@@ -244,10 +244,10 @@ async def generic_analysis(context: dict, openai_client) -> dict:
 async def execute_remediation(rca_result: dict, failure_context: dict) -> dict:
     """
     Execute remediation based on RCA results:
-    - HIGH confidence infrastructure issues: Create fix PR
-    - Everything else: Post detailed comment
+    - HIGH confidence infrastructure issues: Create fix PR (GitHub or Azure Repos)
+    - Everything else: Post detailed comment or create work item
     """
-    from shared.git_operations import GitOperations
+    import os
     from shared.ado_client import AzureDevOpsClient
     
     try:
@@ -255,72 +255,155 @@ async def execute_remediation(rca_result: dict, failure_context: dict) -> dict:
         can_autofix = rca_result.get('can_autofix', False)
         category = rca_result.get('category', 'UNKNOWN')
         
+        logging.info(f"Remediation decision: confidence={confidence}, can_autofix={can_autofix}, category={category}")
+        
         ado_client = AzureDevOpsClient()
         
         # HIGH confidence + can autofix = Create PR
-        if confidence >= 0.7 and can_autofix:
+        if confidence >= 0.65 and can_autofix:
             logging.info("✨ High confidence - attempting auto-fix")
             
-            git_ops = GitOperations()
+            # Determine if GitHub or Azure Repos
+            repo_url = failure_context.get('repo_url', '')
+            is_github = True  # Default to GitHub
+            if repo_url:
+                is_github = 'github.com' in repo_url.lower()
             
-            # Generate fix code
-            fix_code = rca_result.get('fix_code', '')
-            fix_explanation = rca_result.get('explanation', '')
+            if is_github:
+                # GitHub PR Creation
+                try:
+                    from shared.github_operations import GitHubOperations
+                    
+                    github_ops = GitHubOperations()
+                    
+                    # Get repo details
+                    repo_owner = os.getenv("GITHUB_REPO_OWNER", "opscart")
+                    repo_name = os.getenv("GITHUB_REPO_NAME", "agentic-devops-healing")
+                    
+                    if repo_url:
+                        extracted_owner, extracted_repo = github_ops.get_repo_from_url(repo_url)
+                        if extracted_owner and extracted_repo:
+                            repo_owner = extracted_owner
+                            repo_name = extracted_repo
+                    
+                    # Get source branch
+                    source_branch = failure_context.get('source_branch', 'main')
+                    if source_branch and source_branch.startswith('refs/heads/'):
+                        source_branch = source_branch.replace('refs/heads/', '')
+                    if not source_branch:
+                        source_branch = 'main'
+                    
+                    logging.info(f"🔧 Creating GitHub PR for {repo_owner}/{repo_name}, branch: {source_branch}")
+                    
+                    # Create the PR
+                    pr_result = await github_ops.create_fix_pr(
+                        repo_owner=repo_owner,
+                        repo_name=repo_name,
+                        source_branch=source_branch,
+                        fix_description=rca_result.get('explanation', 'Auto-generated fix'),
+                        file_changes={},
+                        rca=rca_result
+                    )
+                    
+                    pr_url = pr_result.get('pr_url', 'PR created')
+                    pr_number = pr_result.get('pr_id', 'N/A')
+                    
+                    logging.info(f"GitHub PR #{pr_number} created: {pr_url}")
+                    
+                    return {
+                        "action": "AUTO_FIX_PR_CREATED",
+                        "details": f"Created GitHub PR #{pr_number}",
+                        "pr_url": pr_url,
+                        "pr_number": pr_number
+                    }
+                
+                except Exception as pr_error:
+                    logging.error(f"GitHub PR creation failed: {str(pr_error)}")
+                    import traceback
+                    logging.error(traceback.format_exc())
+                    
+                    # Fallback to work item
+                    work_item_id = await ado_client.create_work_item(
+                        project=failure_context.get('project_name', 'AI-DevOps-POC'),
+                        title=f"🤖 Auto-fix Suggested: {category.replace('_', ' ').title()}",
+                        description=f"PR creation failed: {str(pr_error)}\n\n{format_work_item_description(rca_result, failure_context)}"
+                    )
+                    
+                    return {
+                        "action": "AUTO_FIX_SUGGESTED",
+                        "details": f"Created work item: {work_item_id} (PR failed: {str(pr_error)})",
+                        "work_item_id": work_item_id
+                    }
             
-            # Create branch and PR
-            pr_url = await git_ops.create_fix_pr(
-                repo_url=failure_context.get('repo_url'),
-                fix_code=fix_code,
-                explanation=fix_explanation,
-                base_branch=failure_context.get('source_branch', 'main')
+            else:
+                # Azure Repos PR Creation
+                try:
+                    from shared.git_operations import GitOperations
+                    
+                    git_ops = GitOperations()
+                    repo_name = "agentic-devops-healing"
+                    
+                    if repo_url and '/_git/' in repo_url:
+                        repo_name = repo_url.split('/_git/')[-1].split('?')[0].strip('/')
+                    
+                    source_branch = failure_context.get('source_branch', 'refs/heads/main')
+                    if not source_branch.startswith('refs/heads/'):
+                        source_branch = f'refs/heads/{source_branch}'
+                    
+                    pr_result = await git_ops.create_fix_pr(
+                        project=failure_context.get('project_name', 'AI-DevOps-POC'),
+                        repo_name=repo_name,
+                        source_branch=source_branch,
+                        fix_description=rca_result.get('explanation', ''),
+                        file_changes={},
+                        rca=rca_result
+                    )
+                    
+                    return {
+                        "action": "AUTO_FIX_PR_CREATED",
+                        "details": f"Created Azure PR",
+                        "pr_url": pr_result.get('pr_url')
+                    }
+                
+                except Exception as pr_error:
+                    logging.error(f"Azure PR creation failed: {str(pr_error)}")
+                    
+                    work_item_id = await ado_client.create_work_item(
+                        project=failure_context.get('project_name', 'AI-DevOps-POC'),
+                        title=f"Pipeline Failure: {failure_context.get('failed_stage', 'Unknown')}",
+                        description=format_work_item_description(rca_result, failure_context)
+                    )
+                    
+                    return {
+                        "action": "WORK_ITEM_CREATED",
+                        "details": f"Created work item: {work_item_id} (PR failed)",
+                        "work_item_id": work_item_id
+                    }
+        
+        else:
+            # Low confidence or can't autofix - create work item
+            logging.info("Creating work item (confidence too low for auto-fix)")
+            
+            work_item_id = await ado_client.create_work_item(
+                project=failure_context.get('project_name', 'AI-DevOps-POC'),
+                title=f"Pipeline Failure: {failure_context.get('failed_stage', 'Unknown')}",
+                description=format_work_item_description(rca_result, failure_context)
             )
             
             return {
-                "action": "AUTO_FIX_PR_CREATED",
-                "details": f"Created fix PR: {pr_url}",
-                "pr_url": pr_url
+                "action": "WORK_ITEM_CREATED",
+                "details": f"Created work item: {work_item_id}",
+                "work_item_id": work_item_id
             }
-        
-        # MEDIUM/LOW confidence or can't autofix = Post comment
-        else:
-            logging.info("Posting RCA comment (confidence too low for auto-fix)")
-            
-            # Post to PR if this is a PR build
-            if failure_context.get('pr_id'):
-                comment = format_rca_comment(rca_result)
-                await ado_client.post_pr_comment(
-                    project=failure_context['project_name'],
-                    repo_id=failure_context['repo_url'].split('/')[-1],
-                    pr_id=failure_context['pr_id'],
-                    comment=comment
-                )
-                
-                return {
-                    "action": "RCA_COMMENT_POSTED",
-                    "details": "Posted detailed analysis to PR"
-                }
-            
-            # Otherwise create work item
-            else:
-                work_item_id = await ado_client.create_work_item(
-                    project=failure_context['project_name'],
-                    title=f"Pipeline Failure: {failure_context['failed_stage']}",
-                    description=format_work_item_description(rca_result, failure_context)
-                )
-                
-                return {
-                    "action": "WORK_ITEM_CREATED",
-                    "details": f"Created work item: {work_item_id}",
-                    "work_item_id": work_item_id
-                }
-        
+    
     except Exception as e:
-        logging.error(f"Error executing remediation: {str(e)}")
+        logging.error(f"Error in remediation: {str(e)}")
+        import traceback
+        logging.error(traceback.format_exc())
         return {
             "action": "ERROR",
             "details": str(e)
         }
-
 
 def format_rca_comment(rca_result: dict) -> str:
     """Format RCA results as Markdown comment"""
