@@ -67,7 +67,7 @@ async def handle_failure(req: func.HttpRequest) -> func.HttpResponse:
         
         # Step 3: Take action based on confidence
         logging.info("Executing remediation...")
-        action_result = await execute_remediation(rca_result, failure_context)
+        action_result = await execute_remediation(rca_result, context)
         
         # Return response
         response = {
@@ -274,12 +274,19 @@ async def execute_remediation(rca_result: dict, failure_context: dict) -> dict:
         if confidence >= 0.65 and can_autofix:
             
             # Determine if we should generate actual code (80%+) or just suggestions (65-80%)
-            generate_code = confidence >= 0.80
+            generate_code = confidence >= 0.70
             
             if generate_code:
                 logging.info("✨ Very high confidence (80%+) - generating actual code")
                 from shared.code_generator import generate_terraform_fix
-                file_changes = generate_terraform_fix(rca_result, failure_context)
+                
+                full_context = {
+                    **failure_context,
+                    'build_logs': failure_context.get('build_logs', ''),  # ← Use failure_context
+                    'last_successful_build_logs': failure_context.get('last_successful_build_logs', ''),
+                    'pipeline_definition': failure_context.get('pipeline_definition', {})
+                }
+                file_changes = generate_terraform_fix(rca_result, full_context) 
                 
                 if not file_changes:
                     logging.warning("Code generation not implemented for this pattern - using suggestions")
@@ -426,6 +433,45 @@ async def execute_remediation(rca_result: dict, failure_context: dict) -> dict:
         
         # MEDIUM/LOW confidence or can't autofix = Create work item
         else:
+            # For syntax errors with high confidence, create PR with suggestions
+            if category == 'TERRAFORM_SYNTAX_ERROR' and confidence >= 0.80:
+                logging.info(f"Creating suggestion PR for syntax error (confidence: {confidence:.2f})")
+                
+                # GitHub PR with suggestions only (no file changes)
+                try:
+                    from shared.github_operations import GitHubOperations
+                    github_ops = GitHubOperations()
+                    
+                    repo_owner = os.getenv("GITHUB_REPO_OWNER", "opscart")
+                    repo_name = os.getenv("GITHUB_REPO_NAME", "agentic-devops-healing")
+                    source_branch = failure_context.get('source_branch', 'main')
+                    
+                    if source_branch and source_branch.startswith('refs/heads/'):
+                        source_branch = source_branch.replace('refs/heads/', '')
+                    if not source_branch:
+                        source_branch = 'main'
+                    
+                    # Create PR with empty file_changes (suggestions only)
+                    pr_result = await github_ops.create_fix_pr(
+                        repo_owner=repo_owner,
+                        repo_name=repo_name,
+                        source_branch=source_branch,
+                        fix_description=rca_result.get('explanation', 'Manual fix required'),
+                        file_changes={},  # Empty = suggestions only
+                        rca=rca_result
+                    )
+                    
+                    return {
+                        "action": "MANUAL_FIX_SUGGESTED",
+                        "details": f"Created PR #{pr_result.get('pr_id')} with fix suggestions (manual implementation required)",
+                        "pr_url": pr_result.get('pr_url')
+                    }
+                
+                except Exception as e:
+                    logging.error(f"PR creation failed for syntax error: {str(e)}")
+                    # Fall through to create work item
+            
+            # Create work item (default for low confidence or if PR fails)
             logging.info(f"Creating work item (confidence: {confidence:.2f}, can_autofix: {can_autofix})")
             
             work_item_id = await ado_client.create_work_item(
@@ -433,7 +479,6 @@ async def execute_remediation(rca_result: dict, failure_context: dict) -> dict:
                 title=f"Pipeline Failure: {failure_context.get('failed_stage', 'Unknown')}",
                 description=format_work_item_description(rca_result, failure_context)
             )
-            
             return {
                 "action": "WORK_ITEM_CREATED",
                 "details": f"Created work item: {work_item_id}",

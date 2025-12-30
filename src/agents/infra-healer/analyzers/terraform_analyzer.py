@@ -21,6 +21,26 @@ def is_terraform_failure(build_logs: str) -> bool:
     logs_lower = build_logs.lower()
     return any(keyword.lower() in logs_lower for keyword in terraform_keywords)
 
+def detect_error_pattern(build_logs: str) -> tuple:
+    """
+    Detect specific Terraform error patterns
+    Returns: (pattern_name, confidence_boost)
+    """
+    
+    # Pattern 1: Missing Variable (highest priority)
+    if 'Reference to undeclared input variable' in build_logs:
+        return ('TERRAFORM_MISSING_VARIABLE', 0.95)
+    
+    # Pattern 2: Wrong Region
+    if 'was not found in the list of supported Azure Locations' in build_logs:
+        return ('TERRAFORM_WRONG_REGION', 0.90)
+    
+    # Pattern 3: Syntax Error
+    if any(s in build_logs for s in ['Invalid character', 'Extra characters after interpolation', 'Missing closing brace']):
+        return ('TERRAFORM_SYNTAX_ERROR', 0.95)
+    
+    return (None, None)
+
 
 def extract_terraform_error(build_logs: str) -> str:
     """Extract the specific Terraform error message"""
@@ -92,41 +112,45 @@ async def analyze_terraform_failure(failure_info: dict, openai_client) -> dict:
     if not is_terraform_failure(build_logs):
         return None
     
+    # Detect pattern BEFORE AI analysis
+    pattern, pattern_confidence = detect_error_pattern(build_logs)
+    
+    if pattern:
+        logging.info(f"🔍 Detected pattern: {pattern} (confidence: {pattern_confidence})")
+    
     # Get AI analysis
     result = await analyze_with_ai(failure_info, openai_client)
     
-    # Extract values
+    # Override AI if we have high-confidence pattern
+    if pattern and pattern_confidence >= 0.90:
+        ai_category = result.get('category', '')
+        
+        if ai_category != pattern:
+            logging.warning(f"⚠️ AI said '{ai_category}', overriding to '{pattern}' based on pattern")
+            result['category'] = pattern
+            result['confidence'] = max(result.get('confidence', 0.7), pattern_confidence)
+    
+    # NOW use the corrected category
     category = result.get('category', 'TERRAFORM_ERROR')
     explanation = result.get('explanation', '').lower()
-    ai_can_autofix = result.get('can_autofix', False)
     
-    # Check if this is a syntax error (NEVER auto-fix)
+    # Check for syntax errors using CATEGORY (not explanation)
     is_syntax_error = (
-        'syntax error' in explanation or
-        'syntax error' in category.lower() or
-        'syntax' in category.lower() or
-        'missing closing brace' in explanation or
-        'unexpected token' in explanation or
-        'invalid expression' in explanation or
-        'parsing error' in explanation
+        'SYNTAX' in category.upper() or  # ← Check category first
+        category == 'TERRAFORM_SYNTAX_ERROR'  # ← Explicit check
     )
     
-    # Check if AI explicitly said False
-    ai_explicitly_said_no = (
-        'can_autofix: false' in explanation or
-        'can_autofix:false' in explanation or
-        (ai_can_autofix == False and 'can_autofix' in explanation)
-    )
+    # Only check explanation if category isn't clear
+    if not is_syntax_error:
+        is_syntax_error = (
+            'syntax error' in explanation and
+            'missing closing brace' in explanation or
+            'invalid character' in explanation
+        )
     
-    # Make final decision
     if is_syntax_error:
-        # NEVER auto-fix syntax errors
-        can_autofix = False
+        result['can_autofix'] = False
         logging.info(f"🔧 Auto-fix denied: Syntax error detected")
-    elif ai_explicitly_said_no:
-        # Respect AI's explicit "no"
-        can_autofix = False
-        logging.info(f"🔧 Auto-fix denied: AI explicitly said False")
     else:
         # Check for safe auto-fixable patterns
         AUTO_FIXABLE = [
@@ -138,16 +162,13 @@ async def analyze_terraform_failure(failure_info: dict, openai_client) -> dict:
         
         can_autofix = (
             category in AUTO_FIXABLE or
-            ('missing' in explanation and 'variable' in explanation and not is_syntax_error) or
+            ('missing' in explanation and 'variable' in explanation) or
             ('wrong region' in explanation) or
-            ('invalid region' in explanation) or
-            ('should be' in explanation and 'region' in explanation)
+            ('invalid region' in explanation)
         )
         
+        result['can_autofix'] = can_autofix
         logging.info(f"🔧 Auto-fix decision: {can_autofix} (category: {category})")
-    
-    # Override the result
-    result['can_autofix'] = can_autofix
     
     return result
 
@@ -208,11 +229,21 @@ async def analyze_with_ai(
     
     build_logs = failure_info.get('build_logs', '')
     
+    # CRITICAL: Extract the relevant error section, not the entire log
+    # Terraform errors appear at the END of logs, not the beginning
+    if len(build_logs) > 10000:
+        # Get last 5000 chars where actual errors are
+        relevant_logs = build_logs[-5000:]
+        logging.info(f"📋 Using last 5000 chars of {len(build_logs)} total chars")
+    else:
+        relevant_logs = build_logs
+        logging.info(f"📋 Using all {len(build_logs)} chars (short log)")
+    
     prompt = f"""
 Analyze this Terraform pipeline failure and provide a structured response.
 
-Build Logs:
-{build_logs[:3000]}
+Build Logs (Error Section):
+{relevant_logs}
 
 Provide your analysis in this EXACT format:
 CATEGORY: <one of: Configuration Error, Syntax Error, Authentication Error, State Error, Provider Error>
@@ -222,18 +253,20 @@ CAN_AUTOFIX: <True or False>
 SUGGESTED_FIX: <specific steps to fix>
 
 Guidelines for CAN_AUTOFIX:
-- True for: Missing variables, wrong values, typos in config
-- False for: Syntax errors, authentication issues, state conflicts, complex multi-file changes
+- True for: Missing variables, wrong values, incorrect region names
+- False for: Syntax errors, authentication issues, state conflicts
 
-Be specific and actionable.
+Be specific and actionable. Focus on the Terraform error, not the pipeline YAML.
 """
     
     system_message = """You are an expert DevOps engineer specializing in Terraform and infrastructure as code. 
 Analyze pipeline failures and provide accurate root cause analysis with actionable fixes.
 
 For CAN_AUTOFIX decision:
-- Set to True if the fix is a simple configuration change (adding a variable, fixing a typo, correcting a value)
+- Set to True if the fix is a simple configuration change (adding a variable, fixing a value, correcting a region name)
 - Set to False if the fix requires human judgment (syntax errors, authentication, state management)
+
+Focus on Terraform errors in the logs, not the pipeline definition itself.
 """
     
     try:
@@ -265,16 +298,26 @@ For CAN_AUTOFIX decision:
                 autofix_text = line.replace('CAN_AUTOFIX:', '').strip().lower()
                 can_autofix = autofix_text in ['true', 'yes', '1']
         
-        # If it's a missing variable, it's definitely auto-fixable
-        if 'missing' in explanation.lower() and 'variable' in explanation.lower():
+        # Smart overrides based on error patterns
+        explanation_lower = explanation.lower()
+        
+        # Missing variable pattern
+        if 'missing' in explanation_lower and 'variable' in explanation_lower:
             can_autofix = True
             category = "TERRAFORM_MISSING_VARIABLE"
             confidence = max(confidence, 0.85)
         
-        # If it's a wrong region/value, it's auto-fixable
-        if any(word in explanation.lower() for word in ['wrong region', 'invalid region', 'incorrect region', 'should be']):
+        # Wrong region/value pattern
+        if any(word in explanation_lower for word in ['wrong region', 'invalid region', 'incorrect region', 'not found in the list']):
             can_autofix = True
+            category = "TERRAFORM_WRONG_REGION"
             confidence = max(confidence, 0.85)
+        
+        # Syntax error pattern - NEVER autofix
+        if any(word in explanation_lower for word in ['syntax error', 'missing brace', 'invalid character', 'unexpected token']):
+            can_autofix = False
+            category = "TERRAFORM_SYNTAX_ERROR"
+            confidence = max(confidence, 0.90)
         
         return {
             "category": category,
