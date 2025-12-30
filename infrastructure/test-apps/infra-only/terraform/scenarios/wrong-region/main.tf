@@ -15,5 +15,5 @@ provider "azurerm" {
 
 resource "azurerm_resource_group" "test" {
   name     = "rg-test-wrong-region"
-  location = "east-us"  # ← WRONG! Should be "eastus" (no hyphen)
+  location = "eastus"  # ← WRONG! Should be "eastus" (no hyphen)
 }
