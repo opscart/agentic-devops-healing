@@ -6,13 +6,18 @@ AI-assisted pipeline remediation system that automatically detects, analyzes, an
 
 This system reduces mean time to resolution (MTTR) from 30 minutes to under 2 minutes by automating failure investigation and code generation, while maintaining human review for all changes.
 
-**Key Features:**
-- Automatic failure detection via Azure DevOps webhooks
-- AI-powered root cause analysis using GPT-5.2
-- Actual code generation (not just suggestions)
-- GitHub pull request creation with executable fixes
-- Intelligent decision-making based on confidence scores
-- Human-in-the-loop design (all fixes require review)
+## Complete Technical Walkthrough
+
+For detailed analysis, screenshots, and in-depth explanations, read the full article on OpsCart:
+
+**📖 [AI-Powered Pipeline Remediation: Complete Guide](https://opscart.com/ai-automation-azure-pipeline/)**
+
+The article includes:
+- Architecture deep dive with diagrams
+- Step-by-step code explanations
+- Screenshots of actual pipeline failures and fixes
+- Lessons learned and design decisions
+- Production deployment considerations
 
 **Results:**
 - 95%+ detection accuracy across test scenarios
@@ -25,6 +30,16 @@ This system reduces mean time to resolution (MTTR) from 30 minutes to under 2 mi
 ```
 Pipeline Failure → Azure Function → Analysis Engine → Decision Logic → GitHub PR → Human Review → Merge
 ```
+(Timeline View)
+TIME:      0s              1s             10s            13s            15s          2min
+           │               │              │              │              │            │
+FLOW:      Pipeline ──> Pattern ──> AI Analysis ──> Decision ──> PR Created ──> Human ──> Merged ✅
+           Fails       Detection    (if needed)     Logic        (GitHub)      Review
+             │            │              │             │              │            │
+DETAIL:    ❌ Error    • Missing Var   GPT-5.2      80%: Code      Branch      Approve
+           in logs     • Wrong Region  analyzes     65%: Tips      Commit      Modify
+                      • Syntax Err    last 5000    <65%: Work    Changes       or
+                         95%+ conf.   chars          Item                     Reject
 
 **Components:**
 1. **Azure Function** - Webhook receiver and orchestrator
@@ -371,6 +386,16 @@ def generate_your_fix(explanation: str, context: dict) -> dict:
 3. **No Rollback:** Manual intervention required if fix breaks something
 4. **API Rate Limits:** OpenAI API calls are rate-limited
 
+## Supported Failure Types
+- Missing Terraform variables
+- Invalid Azure regions
+- Terraform syntax errors (suggestions only)
+
+## Safety Model
+- No direct commits
+- Confidence thresholds
+- Syntax errors never auto-fixed
+
 ## Future Enhancements
 
 - Multi-language support (Python, Docker, Kubernetes)
@@ -396,7 +421,9 @@ MIT License - see LICENSE file for details
 **Shamsher Khan**
 - Senior DevOps Engineer at GlobalLogic (Hitachi)
 - IEEE Senior Member
-- DZone Contributor
+- DZone Core Member
+- Blog: [OpsCart.com](https://opscart.com)
+- GitHub: [@opscart](https://github.com/opscart)
 
 
 ## Acknowledgments
