@@ -31,6 +31,7 @@ The article includes:
 Pipeline Failure → Azure Function → Analysis Engine → Decision Logic → GitHub PR → Human Review → Merge
 ```
 (Timeline View)
+```
 TIME:      0s              1s             10s            13s            15s          2min
            │               │              │              │              │            │
 FLOW:      Pipeline ──> Pattern ──> AI Analysis ──> Decision ──> PR Created ──> Human ──> Merged ✅
@@ -40,6 +41,7 @@ DETAIL:    ❌ Error    • Missing Var   GPT-5.2      80%: Code      Branch    
            in logs     • Wrong Region  analyzes     65%: Tips      Commit      Modify
                       • Syntax Err    last 5000    <65%: Work    Changes       or
                          95%+ conf.   chars          Item                     Reject
+```
 
 **Components:**
 1. **Azure Function** - Webhook receiver and orchestrator
